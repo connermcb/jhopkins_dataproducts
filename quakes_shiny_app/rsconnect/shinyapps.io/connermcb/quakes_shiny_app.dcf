@@ -1,0 +1,12 @@
+name: quakes_shiny_app
+title: quakes_shiny_app
+username:
+account: connermcb
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 314129
+bundleId: 1299149
+url: https://connermcb.shinyapps.io/quakes_shiny_app/
+when: 1522729837.48984
+asMultiple: FALSE
+asStatic: FALSE

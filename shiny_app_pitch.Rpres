@@ -1,0 +1,227 @@
+ShinyApp Pitch
+========================================================
+author: C. McBride      
+date: April 4, 2018
+autosize: true
+
+Earthquakes
+========================================================
+
+Earthquakes are an extraordinarily frequent occurence, although few of them are strong enough to be felt nevermind cause significant damage. 
+
+```{r echo=FALSE}
+
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(mapproj)
+library(maps)
+library(lubridate)
+library(readr)
+library(SDMTools)
+
+# API url writer function
+make_quake_url <- function(output_format="csv",
+                           starttime=today()-180,
+                           endtime=today(),
+                           minlatitude=27,
+                           minlongitude=-103,
+                           maxlatitude=33,
+                           maxlongitude=-100,
+                           minmagnitude=2.5,
+                           maxmagnitude=10){
+
+        # compose API request
+        base_url <- "https://earthquake.usgs.gov/fdsnws/event/1/query?"
+        
+        # add format arg
+        api_url <- paste0(base_url, "format=", output_format)
+        
+        # add start, end times
+        api_url <- paste0(api_url, "&starttime=", starttime)
+        api_url <- paste0(api_url, "&endtime=", endtime)
+        
+        # set longitude range
+        api_url <- paste0(api_url, "&minlongitude=", minlongitude)
+        api_url <- paste0(api_url, "&maxlongitude=", maxlongitude)
+        
+        # set latitude range
+        api_url <- paste0(api_url, "&minlatitude=", minlatitude)
+        api_url <- paste0(api_url, "&maxlatitude=", maxlatitude)
+        
+        # set magnitude range
+        api_url <- paste0(api_url, "&minmagnitude=", minmagnitude)
+        api_url <- paste0(api_url, "&maxmagnitude=", maxmagnitude)
+        
+        return(api_url)
+}
+ 
+
+# test point (event) in map polygon
+test_pnt_in_ploy <- function(map_poly, pnt_df){
+
+        test_poly <- as.matrix(map_poly[ , 1:2])
+        test_coords <- as.matrix(pnt_df[, c("longitude", "latitude")])
+        
+        idxs <- pnt.in.poly(test_coords, test_poly)[ , "pip"]
+        idxs <- as.logical(idxs)
+        
+        new_df <- pnt_df[idxs, ]
+        
+        return(new_df)
+}
+
+get_base_map <- function(s){
+     
+        base_map <- map_data("state", regions = tolower(s))  
+
+        return(base_map)
+}
+ 
+get_data <- function(base_map, yr){
+        # get bounding box
+        w_e <- range(base_map$long)
+        s_n <- range(base_map$lat)
+                        
+        # scrape USGS data
+        strt_time <- as.Date(paste(yr, "01/01", sep = "/"))
+        
+        end_time <- as.Date(paste(yr, "12/31", sep = "/"))
+                        
+        data_url <-  make_quake_url(starttime = strt_time, 
+                          endtime = min(today(), end_time),
+                          minlatitude = s_n[[1]], maxlatitude = s_n[[2]],
+                          minlongitude = w_e[[1]], maxlongitude = w_e[[2]],
+                          minmagnitude = 2.5, maxmagnitude = 10)
+                        
+        quake_data <- read_csv(data_url)
+        
+        quake_data <- test_pnt_in_ploy(base_map, quake_data)
+        
+        quake_data <- quake_data %>%
+           mutate(short_date = as.Date(time)) %>%
+           arrange(mag)
+
+        return(quake_data)
+}
+
+get_data_smry <- function(d){
+        quake_smry <- quake_data %>%
+           group_by(short_date) %>%
+           summarise(energy=sum(mag))
+        
+        return(quake_smry)
+}
+        
+
+get_plot_obj <- function(base_map, quake_data, state){
+
+       # create plot
+        p <- ggplot() +
+                geom_polygon(data=base_map,
+                             aes(x=long, y=lat, group=group),
+                             color="black", fill = "grey90", size = 1.5)+
+        
+                geom_point(data=quake_data,
+                           aes(x=longitude, y=latitude, color=mag),
+                           alpha=1, size=4, shape=17) +
+        
+                scale_color_continuous(name="Earthquake \nMagnitude",
+                                       high = "yellow", low = "blue",
+                                       limits = c(2.5, 7.5),
+                                       breaks = seq(from=2.5, to=7.5, by=1),
+                                       guide = guide_colorbar(barwidth = 1,
+                                                      barheight = 10,
+                                                      title.position = "top",
+                                                      label.vjust = 0.5)) + 
+        
+                ggtitle(paste(state, "-", year(as.Date(quake_data$time[[1]])))) + 
+                labs(caption = paste("Total Number of Earthquakes =",
+                                     nrow(quake_data))) +
+                coord_map() +
+        
+                theme_void() +
+                theme(plot.title = element_text(hjust = 0.5, 
+                                                vjust = 1, 
+                                                size = 26),
+                      plot.caption = element_text(hjust = 0, 
+                                                  size=14),
+                      legend.position = "right",
+                      legend.text = element_text(size=12),
+                      legend.title = element_text(size=12)) 
+        
+        return(p)
+}
+
+```
+
+```{r echo=FALSE, fig.align="center", fig.height=6, fig.width=8}
+# show frequency of earthquakes
+state <- "California"
+yr <- 2017
+
+c_bm <- get_base_map(state)
+
+c_df <- get_data(c_bm, yr)
+
+# plot count histogram, quakes by date
+ggplot(data=c_df) +
+        geom_histogram(aes(as.Date(c_df$time)), color="grey30", fill="blue", 
+                       bins = 52) +
+        ggtitle("Frequency of Earthquakes in California, 2017") +
+        labs(y="Number of Earthquakes", x="Date") +
+        theme_bw() +
+        theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+Exploring Earthquakes by State
+========================================================
+
+Wouldn't it be valuable to have an application that would allow you to explore the frequency and geographic distribution of earthquakes by state? The earthquake mapping app allows you to select a particular state to map the quake data to.
+
+
+```{r echo=FALSE, fig.align="center", fig.height=5}
+# plot california quakes as example plot
+
+state <- "California"
+yr <- 2018
+
+bm <- get_base_map(state)
+
+quake_df <- get_data(bm, yr)
+
+
+plt <- get_plot_obj(bm, quake_df, state)
+
+plt
+```
+
+View Across Time
+========================================================
+
+The application also gives the user the power to look at trends in quakes across time. For example, the reported increase in earthquakes associated with the rapid spread of hydrolic fracturing gas and petroleum extraction (fracking) in Oklahoma can be clearly illustrated.
+
+```{r echo=FALSE, fig.align="center", fig.height=5, fig.width=12}
+
+library(cowplot)
+
+# grid plot of oklahoma time series
+state <- "Oklahoma"
+
+ok_bm <- get_base_map(state)
+
+ok_dfs <- lapply(c(2005, 2015), function(y) get_data(ok_bm, y))
+
+ok_plts <- lapply(ok_dfs, function(d) get_plot_obj(ok_bm, d, state))
+
+plot_grid(plotlist = ok_plts)
+
+```
+
+Explore the EarthQuakeMapper App
+========================================================
+
+Take the time to explore everything the app has to offer and learn more about the frequency and distributions of earthquakes.
+
+### [Launch EarthQuakeMapper](http://connermcb.shinyapps.io/quakes_shiny_app)
